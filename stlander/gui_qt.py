@@ -10,7 +10,7 @@ import pyvista as pv
 from pyvistaqt import QtInteractor
 from vtk import vtkLight, vtkCamera
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from .core import (
     load_mesh,
@@ -30,6 +30,20 @@ class ViewStyle:
     ambient: float = 0.3
     diffuse: float = 0.6
     specular: float = 0.4
+    # Light visibility
+    key_light_visible: bool = True
+    fill_light_visible: bool = True
+    back_light_visible: bool = True
+    # Light colors (RGB)
+    key_light_color: tuple = (1.0, 1.0, 1.0)
+    fill_light_color: tuple = (0.9, 0.9, 1.0)
+    back_light_color: tuple = (1.0, 1.0, 0.9)
+    # Light positions (azimuth, elevation in degrees)
+    key_light_azimuth: float = 45.0
+    key_light_elevation: float = 45.0
+    # Material properties
+    shininess: float = 0.5
+    roughness: float = 0.3
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -188,6 +202,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lbl_path = QtWidgets.QLabel("No file loaded.")
         self.lbl_path.setWordWrap(True)
 
+        self.lbl_mesh_size = QtWidgets.QLabel("Mesh size: —")
+        self.lbl_num_points = QtWidgets.QLabel("Points: —")
+        self.lbl_num_cells = QtWidgets.QLabel("Cells: —")
         self.lbl_com = QtWidgets.QLabel("COM: —")
         self.lbl_evals = QtWidgets.QLabel("Eigenvalues: —")
         self.txt_axes = QtWidgets.QPlainTextEdit()
@@ -196,6 +213,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.txt_axes.setPlaceholderText("Axes (columns) will appear here…")
 
         info_layout.addWidget(self.lbl_path)
+        info_layout.addWidget(self.lbl_mesh_size)
+        info_layout.addWidget(self.lbl_num_points)
+        info_layout.addWidget(self.lbl_num_cells)
         info_layout.addWidget(self.lbl_com)
         info_layout.addWidget(self.lbl_evals)
         info_layout.addWidget(QtWidgets.QLabel("Axes (columns):"))
@@ -207,36 +227,97 @@ class MainWindow(QtWidgets.QMainWindow):
         lighting_tab = QtWidgets.QWidget()
         lighting_layout = QtWidgets.QVBoxLayout(lighting_tab)
         lighting_layout.setContentsMargins(0, 0, 0, 0)
-        lighting_layout.setSpacing(8)
+        lighting_layout.setSpacing(6)
 
-        # Three-light preset button
-        self.btn_three_lights = QtWidgets.QPushButton("Apply Three-Light Setup")
-        lighting_layout.addWidget(self.btn_three_lights)
+        # Preset buttons row
+        preset_row = QtWidgets.QHBoxLayout()
+        self.btn_three_lights = QtWidgets.QPushButton("3-Light")
+        self.btn_soft_lights = QtWidgets.QPushButton("Soft")
+        self.btn_dramatic = QtWidgets.QPushButton("Dramatic")
+        self.btn_studio = QtWidgets.QPushButton("Studio")
+        self.btn_rim = QtWidgets.QPushButton("Dark+Rim")
+        preset_row.addWidget(self.btn_three_lights)
+        preset_row.addWidget(self.btn_soft_lights)
+        preset_row.addWidget(self.btn_dramatic)
+        preset_row.addWidget(self.btn_studio)
+        preset_row.addWidget(self.btn_rim)
+        lighting_layout.addLayout(preset_row)
+
+        # Reset button
+        self.btn_reset_lighting = QtWidgets.QPushButton("Reset to Default")
+        lighting_layout.addWidget(self.btn_reset_lighting)
         lighting_layout.addWidget(_hline())
 
-        # Ambient lighting
+        # Light visibility toggles
+        lighting_layout.addWidget(QtWidgets.QLabel("Light Visibility"))
+        self.chk_key_light = QtWidgets.QCheckBox("Key Light")
+        self.chk_key_light.setChecked(True)
+        self.chk_fill_light = QtWidgets.QCheckBox("Fill Light")
+        self.chk_fill_light.setChecked(True)
+        self.chk_back_light = QtWidgets.QCheckBox("Back Light")
+        self.chk_back_light.setChecked(True)
+        lighting_layout.addWidget(self.chk_key_light)
+        lighting_layout.addWidget(self.chk_fill_light)
+        lighting_layout.addWidget(self.chk_back_light)
+        lighting_layout.addWidget(_hline())
+
+        # Intensity sliders
+        lighting_layout.addWidget(QtWidgets.QLabel("Light Intensities"))
         self.sld_ambient = _slider_int(0, 100, int(self.style.ambient * 100))
         self.lbl_ambient = QtWidgets.QLabel(f"{self.style.ambient:.2f}")
         ambient_row = QtWidgets.QHBoxLayout()
         ambient_row.addWidget(self.sld_ambient, 1)
         ambient_row.addWidget(self.lbl_ambient, 0)
-        lighting_layout.addWidget(_labeled_row("Ambient", ambient_row))
+        lighting_layout.addWidget(_labeled_row("Fill (Ambient)", ambient_row))
 
-        # Diffuse lighting
         self.sld_diffuse = _slider_int(0, 100, int(self.style.diffuse * 100))
         self.lbl_diffuse = QtWidgets.QLabel(f"{self.style.diffuse:.2f}")
         diffuse_row = QtWidgets.QHBoxLayout()
         diffuse_row.addWidget(self.sld_diffuse, 1)
         diffuse_row.addWidget(self.lbl_diffuse, 0)
-        lighting_layout.addWidget(_labeled_row("Diffuse", diffuse_row))
+        lighting_layout.addWidget(_labeled_row("Key (Diffuse)", diffuse_row))
 
-        # Specular lighting
         self.sld_specular = _slider_int(0, 100, int(self.style.specular * 100))
         self.lbl_specular = QtWidgets.QLabel(f"{self.style.specular:.2f}")
         specular_row = QtWidgets.QHBoxLayout()
         specular_row.addWidget(self.sld_specular, 1)
         specular_row.addWidget(self.lbl_specular, 0)
-        lighting_layout.addWidget(_labeled_row("Specular", specular_row))
+        lighting_layout.addWidget(_labeled_row("Back (Specular)", specular_row))
+        lighting_layout.addWidget(_hline())
+
+        # Light position (key light azimuth/elevation)
+        lighting_layout.addWidget(QtWidgets.QLabel("Key Light Position"))
+        self.sld_azimuth = _slider_int(0, 360, int(self.style.key_light_azimuth))
+        self.lbl_azimuth = QtWidgets.QLabel(f"{self.style.key_light_azimuth:.0f}°")
+        azimuth_row = QtWidgets.QHBoxLayout()
+        azimuth_row.addWidget(self.sld_azimuth, 1)
+        azimuth_row.addWidget(self.lbl_azimuth, 0)
+        lighting_layout.addWidget(_labeled_row("Azimuth", azimuth_row))
+
+        self.sld_elevation = _slider_int(0, 90, int(self.style.key_light_elevation))
+        self.lbl_elevation = QtWidgets.QLabel(f"{self.style.key_light_elevation:.0f}°")
+        elevation_row = QtWidgets.QHBoxLayout()
+        elevation_row.addWidget(self.sld_elevation, 1)
+        elevation_row.addWidget(self.lbl_elevation, 0)
+        lighting_layout.addWidget(_labeled_row("Elevation", elevation_row))
+        lighting_layout.addWidget(_hline())
+
+        # Material properties
+        lighting_layout.addWidget(QtWidgets.QLabel("Material Properties"))
+        self.sld_shininess = _slider_int(0, 100, int(self.style.shininess * 100))
+        self.lbl_shininess = QtWidgets.QLabel(f"{self.style.shininess:.2f}")
+        shininess_row = QtWidgets.QHBoxLayout()
+        shininess_row.addWidget(self.sld_shininess, 1)
+        shininess_row.addWidget(self.lbl_shininess, 0)
+        lighting_layout.addWidget(_labeled_row("Shininess", shininess_row))
+
+        self.sld_roughness = _slider_int(0, 100, int(self.style.roughness * 100))
+        self.lbl_roughness = QtWidgets.QLabel(f"{self.style.roughness:.2f}")
+        roughness_row = QtWidgets.QHBoxLayout()
+        roughness_row.addWidget(self.sld_roughness, 1)
+        roughness_row.addWidget(self.lbl_roughness, 0)
+        lighting_layout.addWidget(_labeled_row("Roughness", roughness_row))
+        lighting_layout.addWidget(_hline())
 
         lighting_layout.addStretch(1)
         tabs.addTab(lighting_tab, "Lighting")
@@ -262,7 +343,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sld_ambient.valueChanged.connect(self.on_ambient_changed)
         self.sld_diffuse.valueChanged.connect(self.on_diffuse_changed)
         self.sld_specular.valueChanged.connect(self.on_specular_changed)
-        self.btn_three_lights.clicked.connect(self.on_three_lights)
+        self.btn_three_lights.clicked.connect(lambda: self.on_preset_lights("three"))
+        self.btn_soft_lights.clicked.connect(lambda: self.on_preset_lights("soft"))
+        self.btn_dramatic.clicked.connect(lambda: self.on_preset_lights("dramatic"))
+        self.btn_studio.clicked.connect(lambda: self.on_preset_lights("studio"))
+        self.btn_rim.clicked.connect(lambda: self.on_preset_lights("rim"))
+        self.btn_reset_lighting.clicked.connect(self.on_reset_lighting)
+        self.chk_key_light.toggled.connect(self.on_light_visibility_changed)
+        self.chk_fill_light.toggled.connect(self.on_light_visibility_changed)
+        self.chk_back_light.toggled.connect(self.on_light_visibility_changed)
+        self.sld_azimuth.valueChanged.connect(self.on_azimuth_changed)
+        self.sld_elevation.valueChanged.connect(self.on_elevation_changed)
+        self.sld_shininess.valueChanged.connect(self.on_shininess_changed)
+        self.sld_roughness.valueChanged.connect(self.on_roughness_changed)
         self.cmb_pa2.currentIndexChanged.connect(self.on_pa2_changed)
         self.btn_px.clicked.connect(lambda: self.on_view_axis("+X"))
         self.btn_nx.clicked.connect(lambda: self.on_view_axis("-X"))
@@ -423,6 +516,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._original = mesh
 
         self.lbl_path.setText(f"Loaded: {path}")
+        # Get mesh size using VTK's GetActualMemorySize (returns KB)
+        mesh_size_kb = mesh.GetActualMemorySize()
+        mesh_size_mb = mesh_size_kb / 1024.0
+        self.lbl_mesh_size.setText(f"Mesh size: {mesh_size_mb:.2f} MB")
+        self.lbl_num_points.setText(f"Points: {mesh.n_points}")
+        self.lbl_num_cells.setText(f"Cells: {mesh.n_cells}")
         
         # Automatically align to principal axes
         self._set_progress(60, "Computing principal axes...")
@@ -532,6 +631,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _apply_lighting(self) -> None:
         """Apply lighting settings to both views using VTK light objects."""
+        import math
+        
         for view in [self.view_left, self.view_right]:
             try:
                 renderer = view.renderer
@@ -542,30 +643,39 @@ class MainWindow(QtWidgets.QMainWindow):
                 light_collection = renderer.GetLights()
                 light_collection.RemoveAllItems()
                 
-                # Create three lights with configurable intensities
-                # Key light (main light from front-right)
-                key_light = vtkLight()
-                key_light.SetPosition(1.0, 1.0, 1.0)
-                key_light.SetFocalPoint(0.0, 0.0, 0.0)
-                key_light.SetIntensity(self.style.diffuse)
-                key_light.SetColor(1.0, 1.0, 1.0)
-                renderer.AddLight(key_light)
+                # Convert azimuth/elevation to Cartesian coordinates
+                az_rad = math.radians(self.style.key_light_azimuth)
+                el_rad = math.radians(self.style.key_light_elevation)
+                key_x = math.cos(el_rad) * math.cos(az_rad)
+                key_y = math.cos(el_rad) * math.sin(az_rad)
+                key_z = math.sin(el_rad)
                 
-                # Fill light (softer light from the left)
-                fill_light = vtkLight()
-                fill_light.SetPosition(-1.0, 0.5, 0.5)
-                fill_light.SetFocalPoint(0.0, 0.0, 0.0)
-                fill_light.SetIntensity(self.style.ambient)
-                fill_light.SetColor(0.9, 0.9, 1.0)
-                renderer.AddLight(fill_light)
+                # Create key light (if visible)
+                if self.style.key_light_visible:
+                    key_light = vtkLight()
+                    key_light.SetPosition(key_x, key_y, key_z)
+                    key_light.SetFocalPoint(0.0, 0.0, 0.0)
+                    key_light.SetIntensity(self.style.diffuse)
+                    key_light.SetColor(*self.style.key_light_color)
+                    renderer.AddLight(key_light)
                 
-                # Back light (rim/separation light)
-                back_light = vtkLight()
-                back_light.SetPosition(0.0, -1.0, 1.0)
-                back_light.SetFocalPoint(0.0, 0.0, 0.0)
-                back_light.SetIntensity(self.style.specular)
-                back_light.SetColor(1.0, 1.0, 0.9)
-                renderer.AddLight(back_light)
+                # Create fill light (if visible)
+                if self.style.fill_light_visible:
+                    fill_light = vtkLight()
+                    fill_light.SetPosition(-1.0, 0.5, 0.5)
+                    fill_light.SetFocalPoint(0.0, 0.0, 0.0)
+                    fill_light.SetIntensity(self.style.ambient)
+                    fill_light.SetColor(*self.style.fill_light_color)
+                    renderer.AddLight(fill_light)
+                
+                # Create back light (if visible)
+                if self.style.back_light_visible:
+                    back_light = vtkLight()
+                    back_light.SetPosition(0.0, -1.0, 1.0)
+                    back_light.SetFocalPoint(0.0, 0.0, 0.0)
+                    back_light.SetIntensity(self.style.specular)
+                    back_light.SetColor(*self.style.back_light_color)
+                    renderer.AddLight(back_light)
                 
                 # Set ambient color for base illumination
                 renderer.SetAmbient(0.2, 0.2, 0.2)
@@ -576,31 +686,150 @@ class MainWindow(QtWidgets.QMainWindow):
         self.view_left.render()
         self.view_right.render()
 
-    @QtCore.Slot()
-    def on_three_lights(self) -> None:
-        """Apply professional three-light setup: key light, fill light, and back light."""
-        # Three-light configuration: bright key and fill, good specular for highlights
-        self.style.ambient = 0.4   # Fill light (overhead)
-        self.style.diffuse = 0.8   # Key light (main illumination)
-        self.style.specular = 0.6  # Back light (highlights and rim)
+    @QtCore.Slot(str)
+    def on_preset_lights(self, preset: str) -> None:
+        """Apply a lighting preset."""
+        if preset == "three":
+            self.style.ambient = 0.4
+            self.style.diffuse = 0.8
+            self.style.specular = 0.6
+            self.style.key_light_color = (1.0, 1.0, 1.0)
+            self.style.fill_light_color = (0.9, 0.9, 1.0)
+            self.style.back_light_color = (1.0, 1.0, 0.9)
+        elif preset == "soft":
+            self.style.ambient = 0.7
+            self.style.diffuse = 0.5
+            self.style.specular = 0.2
+            self.style.key_light_color = (1.0, 1.0, 1.0)
+            self.style.fill_light_color = (1.0, 1.0, 1.0)
+            self.style.back_light_color = (1.0, 1.0, 1.0)
+        elif preset == "dramatic":
+            self.style.ambient = 0.1
+            self.style.diffuse = 1.0
+            self.style.specular = 0.8
+            self.style.key_light_color = (1.0, 1.0, 1.0)
+            self.style.fill_light_color = (0.5, 0.5, 0.7)
+            self.style.back_light_color = (1.0, 0.8, 0.5)
+        elif preset == "studio":
+            self.style.ambient = 0.5
+            self.style.diffuse = 0.9
+            self.style.specular = 0.7
+            self.style.key_light_color = (1.0, 1.0, 1.0)
+            self.style.fill_light_color = (0.95, 0.95, 1.0)
+            self.style.back_light_color = (1.0, 1.0, 0.95)
+        elif preset == "rim":
+            self.style.ambient = 0.15
+            self.style.diffuse = 0.4
+            self.style.specular = 1.0
+            self.style.key_light_color = (0.8, 0.8, 1.0)
+            self.style.fill_light_color = (0.2, 0.2, 0.2)
+            self.style.back_light_color = (1.0, 0.9, 0.7)
         
-        # Update sliders and labels
+        self._update_lighting_ui()
+        self._apply_lighting()
+
+    @QtCore.Slot()
+    def on_reset_lighting(self) -> None:
+        """Reset lighting to default values."""
+        self.style.ambient = 0.3
+        self.style.diffuse = 0.6
+        self.style.specular = 0.4
+        self.style.key_light_visible = True
+        self.style.fill_light_visible = True
+        self.style.back_light_visible = True
+        self.style.key_light_color = (1.0, 1.0, 1.0)
+        self.style.fill_light_color = (0.9, 0.9, 1.0)
+        self.style.back_light_color = (1.0, 1.0, 0.9)
+        self.style.key_light_azimuth = 45.0
+        self.style.key_light_elevation = 45.0
+        self.style.shininess = 0.5
+        self.style.roughness = 0.3
+        self._update_lighting_ui()
+        self._apply_lighting()
+
+    def _update_lighting_ui(self) -> None:
+        """Update all lighting UI elements from current style."""
+        # Update intensity sliders
         self.sld_ambient.blockSignals(True)
         self.sld_diffuse.blockSignals(True)
         self.sld_specular.blockSignals(True)
+        self.sld_azimuth.blockSignals(True)
+        self.sld_elevation.blockSignals(True)
+        self.sld_shininess.blockSignals(True)
+        self.sld_roughness.blockSignals(True)
         
         self.sld_ambient.setValue(int(self.style.ambient * 100))
         self.sld_diffuse.setValue(int(self.style.diffuse * 100))
         self.sld_specular.setValue(int(self.style.specular * 100))
+        self.sld_azimuth.setValue(int(self.style.key_light_azimuth))
+        self.sld_elevation.setValue(int(self.style.key_light_elevation))
+        self.sld_shininess.setValue(int(self.style.shininess * 100))
+        self.sld_roughness.setValue(int(self.style.roughness * 100))
         
         self.lbl_ambient.setText(f"{self.style.ambient:.2f}")
         self.lbl_diffuse.setText(f"{self.style.diffuse:.2f}")
         self.lbl_specular.setText(f"{self.style.specular:.2f}")
+        self.lbl_azimuth.setText(f"{self.style.key_light_azimuth:.0f}°")
+        self.lbl_elevation.setText(f"{self.style.key_light_elevation:.0f}°")
+        self.lbl_shininess.setText(f"{self.style.shininess:.2f}")
+        self.lbl_roughness.setText(f"{self.style.roughness:.2f}")
+        
+        # Update visibility checkboxes
+        self.chk_key_light.blockSignals(True)
+        self.chk_fill_light.blockSignals(True)
+        self.chk_back_light.blockSignals(True)
+        
+        self.chk_key_light.setChecked(self.style.key_light_visible)
+        self.chk_fill_light.setChecked(self.style.fill_light_visible)
+        self.chk_back_light.setChecked(self.style.back_light_visible)
+        
+        self.chk_key_light.blockSignals(False)
+        self.chk_fill_light.blockSignals(False)
+        self.chk_back_light.blockSignals(False)
         
         self.sld_ambient.blockSignals(False)
         self.sld_diffuse.blockSignals(False)
         self.sld_specular.blockSignals(False)
-        
+        self.sld_azimuth.blockSignals(False)
+        self.sld_elevation.blockSignals(False)
+        self.sld_shininess.blockSignals(False)
+        self.sld_roughness.blockSignals(False)
+
+    @QtCore.Slot()
+    def on_light_visibility_changed(self) -> None:
+        """Handle light visibility checkbox changes."""
+        self.style.key_light_visible = self.chk_key_light.isChecked()
+        self.style.fill_light_visible = self.chk_fill_light.isChecked()
+        self.style.back_light_visible = self.chk_back_light.isChecked()
+        self._apply_lighting()
+
+    @QtCore.Slot(int)
+    def on_azimuth_changed(self, v: int) -> None:
+        """Handle key light azimuth slider."""
+        self.style.key_light_azimuth = float(v)
+        self.lbl_azimuth.setText(f"{self.style.key_light_azimuth:.0f}°")
+        self._apply_lighting()
+
+    @QtCore.Slot(int)
+    def on_elevation_changed(self, v: int) -> None:
+        """Handle key light elevation slider."""
+        self.style.key_light_elevation = float(v)
+        self.lbl_elevation.setText(f"{self.style.key_light_elevation:.0f}°")
+        self._apply_lighting()
+
+    @QtCore.Slot(int)
+    def on_shininess_changed(self, v: int) -> None:
+        """Handle shininess slider (material property)."""
+        self.style.shininess = float(v) / 100.0
+        self.lbl_shininess.setText(f"{self.style.shininess:.2f}")
+        # Material properties could affect lighting appearance
+        self._apply_lighting()
+
+    @QtCore.Slot(int)
+    def on_roughness_changed(self, v: int) -> None:
+        """Handle roughness slider (material property)."""
+        self.style.roughness = float(v) / 100.0
+        self.lbl_roughness.setText(f"{self.style.roughness:.2f}")
         self._apply_lighting()
 
     def _pa2_target(self) -> str:
